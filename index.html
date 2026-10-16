@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Copiloto de Eva</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: una sola columna estrecha, estilo cabina; la "carretera" arriba marca el avance del test. */
+:root{
+  --bg:#EAF3EF; --surface:#FFFFFF; --ink:#16302A; --muted:#4F6B63; --line:#CFE0D9;
+  --go:#1B8F63; --go-ink:#FFFFFF; --sun:#E8A917; --sun-ink:#4A3600;
+  --soft-ok:#DDF3E8; --soft-try:#FFF0CF; --asphalt:#2B3A37; --lane:#F0B429;
+  --display:"Avenir Next Rounded","Nunito","Varela Round",ui-rounded,"Trebuchet MS",system-ui,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1A17; --surface:#172722; --ink:#E6F2ED; --muted:#9DB8AE; --line:#2B423B;
+    --go:#3CC48C; --go-ink:#0B1A15; --sun:#F5C453; --sun-ink:#2A1F00;
+    --soft-ok:#173B2D; --soft-try:#3A3115; --asphalt:#0A1210; --lane:#F5C453; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1A17; --surface:#172722; --ink:#E6F2ED; --muted:#9DB8AE; --line:#2B423B;
+  --go:#3CC48C; --go-ink:#0B1A15; --sun:#F5C453; --sun-ink:#2A1F00;
+  --soft-ok:#173B2D; --soft-try:#3A3115; --asphalt:#0A1210; --lane:#F5C453; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--body); font-size:17px; line-height:1.5;
+  padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+#app{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--display);line-height:1.15;margin:0;text-wrap:balance}
+h1{font-size:clamp(2rem,7vw,2.6rem);font-weight:800}
+h2{font-size:1.45rem;font-weight:800}
+h3{font-size:1.1rem;font-weight:800}
+p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+
+/* Barra superior */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-family:var(--display);font-weight:800;font-size:1.05rem;letter-spacing:.02em}
+.chip{
+  border:2px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;
+  font-weight:700;font-size:.9rem;min-height:44px;
+}
+.chip[aria-pressed="true"]{border-color:var(--go);background:var(--soft-ok)}
+
+/* Copiloto */
+.pilot{display:flex;gap:14px;align-items:flex-end}
+.face{width:92px;height:92px;flex:none}
+.face .mouth-open{display:none}
+.pilot.talking .mouth-open{display:block}
+.pilot.talking .mouth-closed{display:none}
+.pilot.talking .face{animation:bob .45s ease-in-out infinite alternate}
+@keyframes bob{to{transform:translateY(-3px)}}
+.bubble{
+  position:relative;background:var(--surface);border:2px solid var(--line);border-radius:18px 18px 18px 4px;
+  padding:12px 16px;font-weight:600;min-width:0;flex:1;overflow-wrap:anywhere;
+}
+
+/* Carretera de avance */
+.road{position:relative;height:44px;background:var(--asphalt);border-radius:12px;overflow:hidden}
+.road::before{
+  content:"";position:absolute;left:12px;right:12px;top:50%;height:4px;transform:translateY(-50%);
+  background:repeating-linear-gradient(90deg,var(--lane) 0 18px,transparent 18px 34px);
+}
+.car{position:absolute;top:6px;left:0;width:48px;height:32px;transition:left .6s ease}
+.road-label{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;font-weight:700}
+
+/* Tarjetas */
+.card{background:var(--surface);border:2px solid var(--line);border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:16px}
+.tag{
+  align-self:flex-start;background:var(--soft-try);color:var(--ink);border-radius:8px;padding:4px 10px;
+  font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+}
+.q{font-family:var(--display);font-size:1.3rem;font-weight:700;line-height:1.3;text-wrap:pretty}
+.opts{display:grid;gap:10px}
+.opt{
+  display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;text-align:left;
+  background:var(--bg);border:2px solid var(--line);border-radius:14px;padding:13px 14px;min-height:56px;
+}
+.opt:hover:not(:disabled){border-color:var(--go)}
+.opt .k{
+  width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:var(--surface);border:2px solid var(--line);font-weight:800;font-family:var(--display);
+}
+.opt:disabled{cursor:default}
+.opt.ok{background:var(--soft-ok);border-color:var(--go)}
+.opt.ok .k{background:var(--go);color:var(--go-ink);border-color:var(--go)}
+.opt.try{background:var(--soft-try);border-color:var(--sun)}
+.opt.try .k{background:var(--sun);color:var(--sun-ink);border-color:var(--sun)}
+.opt.dim{opacity:.55}
+.fb{border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.fb.ok{background:var(--soft-ok)}
+.fb.try{background:var(--soft-try)}
+.fb strong{font-family:var(--display);font-size:1.05rem}
+
+.btn{
+  border:0;border-radius:14px;padding:14px 22px;font-weight:800;font-size:1.05rem;min-height:52px;
+  background:var(--go);color:var(--go-ink);
+}
+.btn.alt{background:transparent;color:var(--ink);border:2px solid var(--line)}
+.btn:hover{filter:brightness(1.06)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.meta{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:.9rem;font-weight:700;flex-wrap:wrap}
+
+/* Respiración */
+.breath{display:grid;place-items:center;height:240px}
+.ring{
+  width:200px;height:200px;border-radius:50%;display:grid;place-items:center;text-align:center;
+  background:var(--soft-ok);border:6px solid var(--go);transform:scale(.55);
+  transition:transform 4s ease-in-out;font-family:var(--display);font-weight:800;font-size:1.2rem;padding:20px;
+}
+.ring #ringNum{display:block;font-size:2.4rem}
+
+/* Resultados */
+.big{font-family:var(--display);font-size:3.2rem;font-weight:800;line-height:1}
+.list{margin:0;padding-left:1.2em;display:grid;gap:6px}
+.phrases{display:grid;gap:8px}
+.phrases div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px dashed var(--line);padding-bottom:6px}
+.phrases b{font-family:var(--display)}
+.phrases i{color:var(--muted)}
+footer{color:var(--muted);font-size:.82rem}
+@media (prefers-reduced-motion:reduce){
+  .car,.ring{transition:none}.pilot.talking .face{animation:none}
+}
+@media (max-width:420px){.face{width:72px;height:72px}.card{padding:18px}.q{font-size:1.18rem}}
+</style>
+</head>
+<body>
+<main id="app">
+  <div class="top">
+    <span class="brand" data-i="brand"></span>
+    <div class="row">
+      <button class="chip" id="langBtn" aria-label="Language / Idioma">English</button>
+      <button class="chip" id="kidBtn" aria-pressed="true"></button>
+      <button class="chip" id="voiceBtn" aria-pressed="true"></button>
+    </div>
+  </div>
+
+  <div class="pilot" id="pilot">
+    <svg class="face" viewBox="0 0 100 100" role="img" id="faceSvg">
+      <circle cx="50" cy="54" r="34" fill="#F2C9A0"/>
+      <path d="M16 50c0-22 16-34 34-34s34 12 34 34c-6-12-18-18-34-18S22 38 16 50z" fill="#3B2A22"/>
+      <circle cx="37" cy="54" r="4" fill="#2A1C16"/><circle cx="63" cy="54" r="4" fill="#2A1C16"/>
+      <circle cx="30" cy="64" r="5" fill="#F0A58E" opacity=".7"/><circle cx="70" cy="64" r="5" fill="#F0A58E" opacity=".7"/>
+      <path class="mouth-closed" d="M39 68q11 11 22 0" stroke="#2A1C16" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <path class="mouth-open" d="M38 66q12 18 24 0z" fill="#8A2F2A" stroke="#2A1C16" stroke-width="3" stroke-linejoin="round"/>
+    </svg>
+    <div class="bubble" id="bubble" aria-live="polite"></div>
+  </div>
+
+  <!-- HOME -->
+  <section class="card" id="sHome">
+    <h1 data-i="homeH"></h1>
+    <p data-i="homeP1"></p>
+    <p style="color:var(--muted)" data-i="homeP2"></p>
+    <div class="row">
+      <button class="btn" id="goStart" data-i="start"></button>
+      <button class="btn alt" id="goBreath" data-i="breathFirst"></button>
+    </div>
+    <p id="best" style="color:var(--muted);font-weight:700" hidden></p>
+  </section>
+
+  <!-- BREATHE -->
+  <section class="card" id="sBreath" hidden>
+    <h2 data-i="breathH"></h2>
+    <p data-i="breathP"></p>
+    <div class="breath"><div class="ring" id="ring" aria-live="polite"><div><span id="ringTxt"></span><span id="ringNum"></span></div></div></div>
+    <div class="row">
+      <button class="btn" id="breathGo"></button>
+      <button class="btn alt" id="breathBack" data-i="back"></button>
+    </div>
+  </section>
+
+  <!-- QUIZ -->
+  <section id="sQuiz" hidden style="display:contents">
+    <div>
+      <div class="road" aria-hidden="true">
+        <svg class="car" id="car" viewBox="0 0 48 32">
+          <path d="M4 22l3-9c1-3 3-5 7-5h17c3 0 5 1 7 4l6 4c2 1 3 3 3 5v3H4z" fill="#F0B429"/>
+          <rect x="14" y="11" width="9" height="6" rx="1" fill="#CFE6F0"/><rect x="25" y="11" width="9" height="6" rx="1" fill="#CFE6F0"/>
+          <circle cx="14" cy="26" r="5" fill="#111"/><circle cx="36" cy="26" r="5" fill="#111"/>
+        </svg>
+      </div>
+      <div class="road-label"><span id="phase"></span><span data-i="goal"></span></div>
+    </div>
+    <div class="card" id="qcard">
+      <div class="meta"><span id="count"></span><span id="score"></span></div>
+      <span class="tag" id="tag"></span>
+      <p class="q" id="qtext"></p>
+      <div class="opts" id="opts"></div>
+      <div class="fb" id="fb" hidden>
+        <strong id="fbTitle"></strong>
+        <p id="fbTip"></p>
+      </div>
+      <div class="row">
+        <button class="btn alt" id="hear" data-i="hear"></button>
+        <button class="btn" id="next" hidden></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- END -->
+  <section class="card" id="sEnd" hidden>
+    <h2 id="endTitle"></h2>
+    <div class="big" id="endScore"></div>
+    <p id="endMsg"></p>
+    <h3 data-i="planH"></h3>
+    <ol class="list">
+      <li data-i="plan1"></li>
+      <li data-i="plan2"></li>
+      <li data-i="plan3"></li>
+    </ol>
+    <h3 data-i="phrH"></h3>
+    <div class="phrases">
+      <div><b>Turn left at the next intersection.</b><i data-i="ph1"></i></div>
+      <div><b>Pull over and park.</b><i data-i="ph2"></i></div>
+      <div><b>Back up in a straight line.</b><i data-i="ph3"></i></div>
+      <div><b>Could you repeat that, please?</b><i data-i="ph4"></i></div>
+    </div>
+    <div class="row">
+      <button class="btn" id="again" data-i="again"></button>
+      <button class="btn alt" id="endBreath" data-i="endBreath"></button>
+    </div>
+  </section>
+
+  <footer data-i="footer"></footer>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- Textos de la interfaz ---------- */
+var S={
+es:{
+ brand:"Copiloto de Eva",voiceOn:"Voz: sí",voiceOff:"Voz: no",
+ homeH:"Hola, Eva",
+ homeP1:"Este test es tuyo. Vamos paso a paso, sin prisa y sin reloj. Cada respuesta te acerca al examen práctico y a manejar con tranquilidad.",
+ homeP2:"24 preguntas sobre las reglas de tránsito de California que se aplican en Los Ángeles. Si una pregunta se te complica, la repasamos juntos al final.",
+ start:"Empezar mi test",breathFirst:"Respirar primero",
+ best:function(n,t){return "Tu mejor resultado hasta ahora: "+n+" de "+t+"."},
+ breathH:"Respira conmigo",
+ breathP:"Tres respiraciones: inhala 4, sostén 4, exhala 6. Así el cuerpo se calma antes de tomar el volante.",
+ go:"Empezar",again2:"Otra vez",back:"Volver",ready:"Listo",
+ inhale:"Inhala por la nariz",hold:"Sostén el aire",exhale:"Exhala despacio",done:"¡Muy bien!",
+ phase1:"Camino al examen",phase2:"Repaso juntos",goal:"Meta: tu licencia",
+ count1:function(i,t){return "Pregunta "+i+" de "+t},count2:function(i,t){return "Repaso "+i+" de "+t},
+ score:function(n){return "Aciertos: "+n},
+ hear:"Escuchar pregunta",next:"Siguiente",finish:"Terminar",
+ rightIs:"La respuesta correcta: ",ansIs:"La respuesta es: ",
+ qWord:"Pregunta",optWord:"Opción",
+ planH:"Tu plan de valentía",
+ plan1:"Practica 15 minutos en un estacionamiento vacío (domingo temprano es ideal), con un adulto con licencia a tu lado.",
+ plan2:"Repite una ruta corta y conocida varias veces: la repetición le quita el miedo al volante.",
+ plan3:"El día del examen: respira tres veces antes de arrancar. Un error pequeño no termina el examen.",
+ phrH:"Frases que podrías oír del examinador",
+ ph1:"Gira a la izquierda en la próxima intersección.",ph2:"Oríllate y estaciónate.",ph3:"Retrocede en línea recta.",ph4:"Lo que puedes decir tú si no entiendes.",
+ again:"Practicar otra vez",endBreath:"Respirar un momento",
+ footer:"Basado en el Código de Vehículos de California y el Manual del Conductor del DMV de California, que rigen en Los Ángeles. Los datos pueden cambiar: confirma siempre en dmv.ca.gov. Funciona sin internet; la voz depende de las voces en español instaladas en tu dispositivo, y si no hay, todo se lee en texto.",
+ faceAlt:"Tu copiloto, un niño de 12 años sonriendo",
+ hello:"Hola, Mami. Soy tu copiloto. Vamos a practicar juntos, sin prisa. ¡Tú puedes!",
+ breathIntro:"Vamos a respirar juntos, Mami. Toca empezar cuando estés lista.",
+ breathAgain:"Respiremos juntos, Mami.",
+ breathDone:"¡Muy bien, Mami! Ahora tu cuerpo está tranquilo. Estás lista.",
+ reviewIntro:"Vamos a repasar juntos las que faltaban, Mami. ",
+ praise:["¡Bien, Mami, lo estás logrando!","¡Eso, Mami! Eres una campeona.","¡Sabía que podías, Mami!","¡Mami, qué bien manejas!","¡Vas muy bien, Mami! Ya pronto me llevarás a mis clases.","¡Esa es, Mami! Cada vez te ves más segura."],
+ tryLead:["¡Casi, Mami! Mira qué fácil: ","¡Tú puedes, Mami! Así es: ","¡Qué bueno que practicamos, Mami! Así se aprende: "],
+ end1:"¡Mami, estás lista!",end1m:"Dominas las reglas. Ahora solo falta llevarlas al volante, un paso a la vez. ¡Estoy muy orgulloso de ti!",
+ end2:"¡Vas muy bien, Mami!",end2m:"Ya sabes más de la mitad y repasamos juntos lo que faltaba. Un par de intentos más y quedas perfecta.",
+ end3:"¡Qué bueno que practicaste, Mami!",end3m:"Cada vez que practicas, aprendes algo nuevo. Repite el test las veces que quieras; yo estoy aquí contigo.",
+ outro:" Ya pronto me llevarás a mis clases. ",
+ of:function(n,t){return n+" de "+t},
+ cats:{vel:"Velocidad",ced:"Ceder el paso",giro:"Giros y carriles",est:"Estacionar",seg:"Seguridad",exa:"Día del examen"},
+ ttsLang:"es-US",pitch:1.8,rate:1.06,kidOn:"Tono infantil: sí",kidOff:"Tono infantil: no",langBtn:"English"
+},
+en:{
+ brand:"Eva's Copilot",voiceOn:"Voice: on",voiceOff:"Voice: off",
+ homeH:"Hi, Eva",
+ homeP1:"This test is yours. We go step by step, with no rush and no clock. Every answer brings you closer to the road test and to driving with calm.",
+ homeP2:"24 questions on the California traffic rules that apply in Los Angeles. If one is tricky, we review it together at the end.",
+ start:"Start my test",breathFirst:"Breathe first",
+ best:function(n,t){return "Your best result so far: "+n+" of "+t+"."},
+ breathH:"Breathe with me",
+ breathP:"Three breaths: in for 4, hold for 4, out for 6. This calms your body before you take the wheel.",
+ go:"Start",again2:"Again",back:"Back",ready:"Ready",
+ inhale:"Breathe in through your nose",hold:"Hold your breath",exhale:"Breathe out slowly",done:"Well done!",
+ phase1:"Road to the exam",phase2:"Reviewing together",goal:"Goal: your license",
+ count1:function(i,t){return "Question "+i+" of "+t},count2:function(i,t){return "Review "+i+" of "+t},
+ score:function(n){return "Correct: "+n},
+ hear:"Listen to question",next:"Next",finish:"Finish",
+ rightIs:"The right answer: ",ansIs:"The answer is: ",
+ qWord:"Question",optWord:"Option",
+ planH:"Your courage plan",
+ plan1:"Practice 15 minutes in an empty parking lot (early Sunday morning is ideal) with a licensed adult next to you.",
+ plan2:"Repeat a short, familiar route several times: repetition takes the fear out of driving.",
+ plan3:"On exam day, take three deep breaths before starting the car. A small mistake does not end the test.",
+ phrH:"Phrases you might hear from the examiner",
+ ph1:"Go left at the next intersection.",ph2:"Stop at the curb and park.",ph3:"Reverse in a straight line.",ph4:"What you can say if you did not understand.",
+ again:"Practice again",endBreath:"Take a breath",
+ footer:"Based on the California Vehicle Code and the California DMV Driver Handbook, which apply in Los Angeles. Rules can change: always confirm at dmv.ca.gov. Works offline; the voice depends on the English voices installed on your device, and if there are none, everything is shown as text.",
+ faceAlt:"Your copilot, a smiling 12-year-old boy",
+ hello:"Hi, Mami. I'm your copilot. We'll practice together, no rush. You can do it!",
+ breathIntro:"Let's breathe together, Mami. Tap start when you're ready.",
+ breathAgain:"Let's breathe together, Mami.",
+ breathDone:"Great job, Mami! Your body is calm now. You're ready.",
+ reviewIntro:"Let's review the ones we missed together, Mami. ",
+ praise:["Great job, Mami, you're doing it!","Yes, Mami! You're a champion.","I knew you could, Mami!","Mami, you drive so well!","You're doing great, Mami! Soon you'll drive me to my classes.","That's it, Mami! You look more confident every time."],
+ tryLead:["Almost, Mami! Look how simple: ","You can do it, Mami! It goes like this: ","So glad we're practicing, Mami! That's how we learn: "],
+ end1:"Mami, you're ready!",end1m:"You know the rules. Now we just bring them to the wheel, one step at a time. I'm so proud of you!",
+ end2:"You're doing great, Mami!",end2m:"You already know more than half, and we reviewed the rest together. A couple more tries and you'll be perfect.",
+ end3:"So glad you practiced, Mami!",end3m:"Every time you practice you learn something new. Retake the test as often as you like; I'm right here with you.",
+ outro:" Soon you'll drive me to my classes. ",
+ of:function(n,t){return n+" of "+t},
+ cats:{vel:"Speed",ced:"Right of way",giro:"Turns and lanes",est:"Parking",seg:"Safety",exa:"Exam day"},
+ ttsLang:"en-US",pitch:1.25,rate:0.98,kidOn:"Kid tone: on",kidOff:"Kid tone: off",langBtn:"Español"
+}};
+
+/* ---------- Preguntas: la primera opción siempre es la correcta; se barajan al mostrar ---------- */
+var Q=[
+ {c:"vel",
+  es:{q:"Vas por una calle residencial de Los Ángeles y no hay ningún letrero de velocidad. ¿Cuál es el límite?",o:["25 mph","35 mph","30 mph"],t:"En zonas residenciales y distritos comerciales el límite es 25 mph si no hay otro letrero."},
+  en:{q:"You're driving on a residential street in Los Angeles and there is no speed limit sign. What is the limit?",o:["25 mph","35 mph","30 mph"],t:"On residential and business-district streets the limit is 25 mph unless a sign says otherwise."}},
+ {c:"vel",
+  es:{q:"Estás cerca de una escuela (School Zone) y hay niños afuera o cruzando. ¿Qué haces?",o:["Bajo a 25 mph o menos y le cedo el paso a los peatones","Mantengo 35 mph porque no veo policía","Toco la bocina para que se aparten"],t:"En zona escolar con niños presentes el límite es 25 mph (o lo que diga el letrero). Los peatones siempre van primero."},
+  en:{q:"You're near a school (School Zone) and children are outside or crossing. What do you do?",o:["Slow to 25 mph or less and yield to pedestrians","Keep going 35 mph because I don't see police","Honk so they move out of the way"],t:"In a school zone with children present the limit is 25 mph (or what the sign says). Pedestrians always go first."}},
+ {c:"vel",
+  es:{q:"Vas a entrar a un callejón (alley). ¿Cuál es el límite de velocidad?",o:["15 mph","25 mph","20 mph"],t:"En callejones el límite es 15 mph."},
+  en:{q:"You're about to drive through an alley. What is the speed limit?",o:["15 mph","25 mph","20 mph"],t:"In alleys the limit is 15 mph."}},
+ {c:"vel",
+  es:{q:"Te acercas a un cruce donde arbustos y edificios no te dejan ver a los lados (cruce ciego). ¿Qué haces?",o:["Voy a 15 mph o menos y avanzo despacio mirando a ambos lados","Voy a 25 mph para pasar rápido","Acelero para cruzar antes que alguien aparezca"],t:"En un cruce ciego, donde no ves 100 pies a los lados, el límite es 15 mph."},
+  en:{q:"You're approaching an intersection where bushes and buildings block your view to the sides (blind intersection). What do you do?",o:["Go 15 mph or less and creep forward looking both ways","Go 25 mph to get through quickly","Speed up to cross before anyone appears"],t:"At a blind intersection, where you can't see 100 feet to the sides, the limit is 15 mph."}},
+ {c:"ced",
+  es:{q:"Llegas a un letrero de Stop con línea blanca en el pavimento. ¿Dónde te detienes?",o:["Por completo, antes de la línea blanca","Reduzco y sigo si no viene nadie","Después de la línea, para ver mejor"],t:"Alto total, con las ruedas quietas, antes de la línea. Cuenta mentalmente \"uno, dos\": el examinador lo vigila mucho."},
+  en:{q:"You reach a Stop sign with a white line on the pavement. Where do you stop?",o:["Completely, before the white line","I slow down and go if nobody is coming","Past the line, to see better"],t:"A full stop, wheels not moving, before the line. Count \"one, two\" in your head: the examiner watches this closely."}},
+ {c:"ced",
+  es:{q:"Llegas a un Stop de 4 vías al mismo tiempo que otro auto que está a tu derecha. ¿Quién pasa primero?",o:["Él: cedo el paso al de mi derecha","Yo, porque voy más rápido","El que haga más señas"],t:"Pasa el primero que llegó. Si llegan juntos, se cede el paso al vehículo de la derecha."},
+  en:{q:"You reach a 4-way stop at the same time as another car on your right. Who goes first?",o:["Them: I yield to the car on my right","Me, because I'm faster","Whoever waves the most"],t:"The first to arrive goes first. If you arrive together, yield to the vehicle on your right."}},
+ {c:"ced",
+  es:{q:"El semáforo está en rojo y quieres girar a la derecha. No hay letrero que lo prohíba. ¿Qué haces?",o:["Me detengo por completo, cedo el paso y giro cuando es seguro","Giro sin detenerme","Espero siempre el verde"],t:"En California se puede girar a la derecha en rojo después de un alto total, cediendo el paso, salvo que un letrero lo prohíba (No Turn on Red)."},
+  en:{q:"The light is red and you want to turn right. No sign prohibits it. What do you do?",o:["Stop completely, yield, and turn when it's safe","Turn without stopping","Always wait for green"],t:"In California you may turn right on red after a full stop, yielding to traffic and pedestrians, unless a sign prohibits it (No Turn on Red)."}},
+ {c:"ced",
+  es:{q:"La luz del semáforo cambia a amarillo cuando aún estás lejos de la intersección. ¿Qué haces?",o:["Me preparo para detenerme, si puedo hacerlo con seguridad","Acelero para pasar","Freno de golpe sin mirar atrás"],t:"Amarillo significa precaución: el rojo viene enseguida. Mira el espejo y frena con suavidad."},
+  en:{q:"The light turns yellow while you're still far from the intersection. What do you do?",o:["Prepare to stop, if I can do it safely","Speed up to get through","Slam the brakes without looking behind"],t:"Yellow means caution: red is coming. Check your mirror and brake smoothly."}},
+ {c:"ced",
+  es:{q:"Una persona empieza a cruzar en una esquina sin semáforo y sin rayas pintadas. ¿Qué haces?",o:["Me detengo y le cedo el paso","Sigo, porque no hay rayas","Le toco la bocina para que apure"],t:"Toda esquina es un cruce peatonal, aunque no esté pintado. Se espera a que el peatón termine de cruzar."},
+  en:{q:"A person starts crossing at a corner with no signal and no painted lines. What do you do?",o:["Stop and yield to them","Keep going, since there are no lines","Honk so they hurry"],t:"Every intersection corner is a crosswalk, even if it isn't painted. Wait until the pedestrian finishes crossing."}},
+ {c:"giro",
+  es:{q:"¿Cuánta distancia mínima debes dejar con el auto de adelante en condiciones normales?",o:["Al menos 3 segundos","1 segundo","Medio auto"],t:"Cuando el auto de adelante pasa un punto fijo, cuenta \"mil uno, mil dos, mil tres\". Con lluvia o poca visibilidad, deja más."},
+  en:{q:"How much following distance should you keep behind the car ahead in normal conditions?",o:["At least 3 seconds","1 second","Half a car length"],t:"When the car ahead passes a fixed point, count \"one-thousand-one, one-thousand-two, one-thousand-three\". In rain or low visibility, leave more."}},
+ {c:"giro",
+  es:{q:"Vas a cambiar de carril. ¿Qué haces?",o:["Pongo la direccional, miro los espejos y giro la cabeza para ver el punto ciego","Solo pongo la direccional y cambio","Solo miro el espejo retrovisor"],t:"Los examinadores quieren ver que giras la cabeza hacia el punto ciego. ¡Exagéralo un poquito!"},
+  en:{q:"You're going to change lanes. What do you do?",o:["Signal, check mirrors, and turn my head to check the blind spot","Just signal and move over","Just look in the rearview mirror"],t:"Examiners want to see you turn your head toward the blind spot. Exaggerate it a little!"}},
+ {c:"giro",
+  es:{q:"¿Con cuánta anticipación debes poner la direccional antes de girar?",o:["Al menos 100 pies antes del giro","Cuando ya estoy girando","Un segundo antes"],t:"En California la señal debe darse por lo menos 100 pies antes de girar."},
+  en:{q:"How far before a turn should you turn on your signal?",o:["At least 100 feet before the turn","When I'm already turning","One second before"],t:"In California the signal must be given at least 100 feet before turning."}},
+ {c:"giro",
+  es:{q:"Vas a girar a la derecha y hay un carril para bicicletas (Bike Lane) a tu lado. ¿Cómo giras?",o:["Entro al carril bici máximo 200 pies antes del giro y cedo el paso a los ciclistas","Manejo por el carril bici todo el trayecto","Giro desde el carril del centro"],t:"Puedes entrar al carril bici solo para girar, a no más de 200 pies de la esquina, y los ciclistas tienen prioridad."},
+  en:{q:"You're turning right and there is a bike lane beside you. How do you turn?",o:["Enter the bike lane no more than 200 feet before the turn, yielding to cyclists","Drive in the bike lane the whole way","Turn from the center lane"],t:"You may enter the bike lane only to turn, no more than 200 feet from the corner, and cyclists have priority."}},
+ {c:"giro",
+  es:{q:"En el centro de la calle ves dos líneas amarillas continuas. ¿Qué significa?",o:["No cruzo esas líneas para rebasar; me quedo en mi lado","Puedo rebasar si no viene nadie","Puedo rebasar en una curva"],t:"Doble línea amarilla continua: no se cruza para rebasar."},
+  en:{q:"In the middle of the road you see two solid yellow lines. What does it mean?",o:["I don't cross them to pass; I stay on my side","I can pass if nobody is coming","I can pass on a curve"],t:"Double solid yellow lines: do not cross them to pass."}},
+ {c:"est",
+  es:{q:"Estacionas cuesta abajo junto a una acera. ¿Hacia dónde giras las ruedas delanteras?",o:["Hacia la acera","Hacia la calle","Las dejo rectas"],t:"Cuesta abajo, ruedas hacia la acera y freno de mano puesto: si el auto se mueve, la acera lo detiene."},
+  en:{q:"You park downhill next to a curb. Which way do you turn the front wheels?",o:["Toward the curb","Toward the street","Leave them straight"],t:"Downhill: wheels toward the curb and parking brake on. If the car moves, the curb stops it."}},
+ {c:"est",
+  es:{q:"Estacionas cuesta arriba junto a una acera. ¿Hacia dónde giras las ruedas delanteras?",o:["Hacia la calle, lejos de la acera","Hacia la acera","Las dejo rectas"],t:"Cuesta arriba con acera, ruedas hacia la calle. Si el auto se rueda hacia atrás, el neumático se apoya en la acera."},
+  en:{q:"You park uphill next to a curb. Which way do you turn the front wheels?",o:["Toward the street, away from the curb","Toward the curb","Leave them straight"],t:"Uphill with a curb: wheels toward the street. If the car rolls back, the tire rests against the curb."}},
+ {c:"est",
+  es:{q:"El borde de la acera está pintado de rojo. ¿Qué significa?",o:["No puedo detenerme ni estacionarme ahí","Puedo parar 5 minutos","Solo está prohibido de noche"],t:"Rojo es alto total prohibido. Amarillo es carga, blanco es subir y bajar pasajeros, verde es tiempo limitado."},
+  en:{q:"The curb is painted red. What does it mean?",o:["I can't stop or park there","I can stop for 5 minutes","It's only prohibited at night"],t:"Red means no stopping. Yellow is loading, white is passenger loading, green is limited time."}},
+ {c:"est",
+  es:{q:"Un letrero de limpieza de calles (Street Sweeping) dice \"No Parking Tue 8–10 AM\". Hoy es martes y son las 9. ¿Qué haces?",o:["No estaciono ahí: me pueden multar o remolcar","Estaciono 5 minutos","Dejo las luces intermitentes puestas"],t:"En Los Ángeles estos letreros se respetan al pie de la letra. Lee día y hora antes de apagar el motor."},
+  en:{q:"A Street Sweeping sign says \"No Parking Tue 8–10 AM\". Today is Tuesday and it's 9 AM. What do you do?",o:["I don't park there: I could be ticketed or towed","I park for 5 minutes","I leave my hazard lights on"],t:"In Los Angeles these signs are enforced strictly. Read the day and time before turning off the engine."}},
+ {c:"seg",
+  es:{q:"Oyes una sirena y ves luces de una ambulancia que viene detrás de ti. ¿Qué haces?",o:["Me oriento a la derecha y me detengo hasta que pase","Acelero para quitarme del camino","Freno en el carril del centro"],t:"Orillarte a la derecha y detenerte, sin bloquear una intersección."},
+  en:{q:"You hear a siren and see the lights of an ambulance coming up behind you. What do you do?",o:["Pull to the right and stop until it passes","Speed up to get out of the way","Brake in the middle lane"],t:"Pull to the right and stop, without blocking an intersection."}},
+ {c:"seg",
+  es:{q:"¿Cómo puedes usar el celular mientras manejas en California?",o:["Solo con manos libres","Para mandar mensajes en el semáforo","Sosteniéndolo en la mano con el altavoz"],t:"Está prohibido sostener el teléfono. Solo manos libres y, si está montado, un toque o deslizamiento."},
+  en:{q:"How can you use your phone while driving in California?",o:["Only hands-free","To text at a red light","Holding it in my hand on speaker"],t:"Holding the phone is prohibited. Hands-free only and, if it's mounted, a single tap or swipe."}},
+ {c:"seg",
+  es:{q:"Empieza a llover y necesitas los limpiaparabrisas. ¿Qué más haces?",o:["Enciendo las luces y reduzco la velocidad","Solo uso los limpiaparabrisas","Pongo las luces intermitentes"],t:"En California, si usas los limpiaparabrisas por el clima, debes encender las luces. Con pavimento mojado, más distancia."},
+  en:{q:"It starts raining and you need your windshield wipers. What else do you do?",o:["Turn on my headlights and slow down","Use only the wipers","Turn on my hazard lights"],t:"In California, if you need wipers because of weather, you must turn on your headlights. On wet pavement, leave more distance."}},
+ {c:"exa",
+  es:{q:"Subes al auto del examen. Antes de arrancar, ¿qué haces?",o:["Ajusto asiento y espejos, me pongo el cinturón y respiro hondo","Arranco y ajusto todo en el camino","Espero a que el examinador lo haga"],t:"Prepararte con calma es parte de manejar bien. Tienes tiempo."},
+  en:{q:"You get into the exam car. Before starting, what do you do?",o:["Adjust seat and mirrors, buckle up, and take a deep breath","Start driving and adjust on the way","Wait for the examiner to do it"],t:"Getting ready calmly is part of driving well. You have time."}},
+ {c:"exa",
+  es:{q:"Cometes un error pequeño durante el examen práctico. ¿Qué haces?",o:["Respiro y sigo manejando con calma","Me detengo y me rindo","Freno de golpe en medio de la calle"],t:"El examen se califica por puntos; solo los errores críticos, como una maniobra peligrosa, lo terminan al instante. Un error pequeño se puede superar."},
+  en:{q:"You make a small mistake during the road test. What do you do?",o:["Breathe and keep driving calmly","Stop and give up","Slam the brakes in the middle of the street"],t:"The test is scored with points; only critical errors, like a dangerous maneuver, end it right away. A small mistake can be overcome."}},
+ {c:"exa",
+  es:{q:"El examinador te da una instrucción y no la entendiste bien. ¿Qué haces?",o:["Le pido con educación que la repita: \"Could you repeat that, please?\"","Adivino y giro","Me quedo callada"],t:"Pedir que repitan es normal y mucho mejor que adivinar."},
+  en:{q:"The examiner gives you an instruction and you didn't understand it well. What do you do?",o:["Politely ask them to repeat it: \"Could you repeat that, please?\"","Guess and turn","Stay silent"],t:"Asking them to repeat is normal and much better than guessing."}}
+];
+
+var $=function(s){return document.querySelector(s)};
+var st={lang:"es",screen:"home",queue:[],i:0,first:0,missed:[],review:false,chosen:null,voice:true,kid:true,timer:null,breathToken:0,breathPhase:"ready",item:null,order:[]};
+var ac=null,voice=null;
+function T(k){return S[st.lang][k]}
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+function pick(a){return a[Math.floor(Math.random()*a.length)]}
+function cur(){return st.item[st.lang]}
+
+/* ---------- Voz infantil (speechSynthesis, funciona sin internet con voces locales) ---------- */
+function loadVoice(){
+  if(!("speechSynthesis" in window))return;
+  var re=st.lang==="en"?/^en/i:/^es/i,pref=st.lang==="en"?/en[-_]US/i:/es[-_](US|MX|419)/i;
+  var vs=speechSynthesis.getVoices().filter(function(v){return re.test(v.lang)});
+  function rank(v){var s=0;if(v.localService)s+=4;if(pref.test(v.lang))s+=2;if(/female|samantha|zira|paulina|monica|sabina|helena|luciana|paloma|aria|jenny/i.test(v.name))s+=1;return s}
+  vs.sort(function(a,b){return rank(b)-rank(a)});
+  voice=vs[0]||null;
+}
+if("speechSynthesis" in window){loadVoice();speechSynthesis.onvoiceschanged=loadVoice}
+function mouth(on){$("#pilot").classList.toggle("talking",on)}
+function say(text,opts){
+  opts=opts||{};
+  $("#bubble").textContent=text;
+  if(!(opts.force||st.voice))return;
+  clearTimeout(st.timer);
+  if(!("speechSynthesis" in window)){mouth(true);st.timer=setTimeout(function(){mouth(false)},Math.min(6000,text.length*55));return}
+  try{
+    speechSynthesis.cancel();
+    var spoken=opts.speak||text;
+    if(st.lang==="en")spoken=spoken.replace(/\bmph\b/g,"miles per hour").replace(/…/g,".");
+    var u=new SpeechSynthesisUtterance(spoken);
+    u.lang=voice?voice.lang:T("ttsLang");if(voice)u.voice=voice;
+    u.pitch=st.kid?T("pitch"):1;u.rate=T("rate");u.volume=1;
+    u.onstart=function(){mouth(true)};
+    u.onend=u.onerror=function(){mouth(false)};
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function stopVoice(){try{if("speechSynthesis" in window)speechSynthesis.cancel()}catch(e){}mouth(false)}
+function chime(ok){
+  if(!st.voice)return;
+  try{
+    ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+    (ok?[523,659,784]:[392,440]).forEach(function(f,k){
+      var o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+k*.12;
+      o.type="sine";o.frequency.value=f;
+      g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.14,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+.28);
+      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.3);
+    });
+  }catch(e){}
+}
+
+/* ---------- Idioma ---------- */
+function applyStatic(){
+  document.documentElement.lang=st.lang;
+  [].forEach.call(document.querySelectorAll("[data-i]"),function(el){el.textContent=T(el.getAttribute("data-i"))});
+  $("#langBtn").textContent=T("langBtn");
+  $("#voiceBtn").textContent=T(st.voice?"voiceOn":"voiceOff");
+  $("#kidBtn").textContent=T(st.kid?"kidOn":"kidOff");
+  $("#faceSvg").setAttribute("aria-label",T("faceAlt"));
+  document.title=T("brand");
+  $("#ringTxt").textContent=T(st.breathPhase);
+  $("#breathGo").textContent=st.breathPhase==="done"?T("again2"):T("go");
+  if(!$("#sHome").hidden){var b=store("eva_best");if(b){$("#best").hidden=false;$("#best").textContent=T("best")(b,Q.length)}}
+}
+function setLang(l,quiet){
+  st.lang=l;store("eva_lang",l);loadVoice();stopVoice();applyStatic();
+  if(st.screen==="quiz")renderQ(false,true);
+  else if(st.screen==="end")endText(true);
+  else if(st.screen==="breath")$("#bubble").textContent=T("breathIntro");
+  else $("#bubble").textContent=T("hello");
+}
+
+function show(id,name){
+  st.screen=name;
+  ["sHome","sBreath","sQuiz","sEnd"].forEach(function(s){$("#"+s).hidden=(s!==id)});
+  $("#sQuiz").style.display=(id==="sQuiz")?"contents":"none";
+  window.scrollTo(0,0);
+}
+
+/* ---------- Inicio ---------- */
+function home(silent){
+  st.breathToken++;stopVoice();show("sHome","home");applyStatic();
+  if(silent)$("#bubble").textContent=T("hello");else say(T("hello"));
+}
+
+/* ---------- Respiración ---------- */
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function openBreath(txt){
+  st.breathToken++;st.breathPhase="ready";show("sBreath","breath");applyStatic();$("#ringNum").textContent="";
+  $("#ring").style.transform="";say(txt);
+}
+async function breathe(){
+  var tok=++st.breathToken,ring=$("#ring"),num=$("#ringNum"),btn=$("#breathGo");
+  btn.disabled=true;
+  var steps=[["inhale",4,1],["hold",4,1],["exhale",6,.55]];
+  for(var c=0;c<3;c++){
+    for(var s=0;s<3;s++){
+      if(tok!==st.breathToken)return;
+      var p=steps[s];
+      st.breathPhase=p[0];$("#ringTxt").textContent=T(p[0]);
+      ring.style.transition="transform "+(s===1?0:p[1])+"s ease-in-out";
+      ring.style.transform="scale("+p[2]+")";
+      say(T(p[0])+"…",{speak:T(p[0])});
+      for(var n=p[1];n>0;n--){num.textContent=n;await sleep(1000);if(tok!==st.breathToken)return}
+    }
+  }
+  num.textContent="";st.breathPhase="done";$("#ringTxt").textContent=T("done");
+  ring.style.transition="transform 1s";ring.style.transform="scale(.8)";
+  say(T("breathDone"));
+  btn.disabled=false;btn.textContent=T("again2");
+}
+
+/* ---------- Test ---------- */
+function start(){
+  st.queue=shuffle(Q);st.i=0;st.first=0;st.missed=[];st.review=false;
+  show("sQuiz","quiz");renderQ(true,false);
+}
+function renderQ(fresh,quiet){
+  var item=st.queue[st.i];st.item=item;
+  if(fresh){st.chosen=null;st.order=shuffle([0,1,2])}
+  var d=cur(),total=st.queue.length;
+  $("#phase").textContent=T(st.review?"phase2":"phase1");
+  $("#count").textContent=T(st.review?"count2":"count1")(st.i+1,total);
+  $("#score").textContent=T("score")(st.first);
+  $("#tag").textContent=T("cats")[item.c];
+  $("#qtext").textContent=d.q;
+  $("#car").style.left=((st.i/total)*88)+"%";
+  var box=$("#opts");box.textContent="";
+  st.order.forEach(function(idx,k){
+    var b=document.createElement("button");b.type="button";b.className="opt";
+    var kk=document.createElement("span");kk.className="k";kk.textContent="ABC"[k];
+    var tx=document.createElement("span");tx.textContent=d.o[idx];
+    b.appendChild(kk);b.appendChild(tx);
+    b.addEventListener("click",function(){answer(idx)});
+    box.appendChild(b);
+  });
+  $("#fb").hidden=true;$("#next").hidden=true;
+  if(st.chosen!==null){paint(st.chosen,false);return}
+  var intro=(st.review&&st.i===0)?T("reviewIntro"):"";
+  if(quiet)$("#bubble").textContent=intro+T("qWord")+" "+(st.i+1)+". "+d.q;
+  else say(intro+T("qWord")+" "+(st.i+1)+". "+d.q);
+}
+function hear(){
+  var d=cur(),L="ABC";
+  var txt=d.q+" "+st.order.map(function(idx,k){return T("optWord")+" "+L[k]+": "+d.o[idx]+"."}).join(" ");
+  say(d.q,{speak:txt,force:true});
+}
+function answer(idx){
+  if(st.chosen!==null)return;
+  st.chosen=idx;
+  var ok=(idx===0);
+  if(ok){if(!st.review)st.first++}
+  else if(!st.review&&st.missed.indexOf(st.item)<0)st.missed.push(st.item);
+  $("#score").textContent=T("score")(st.first);
+  chime(ok);
+  paint(idx,true);
+}
+function paint(idx,speak){
+  var d=cur(),ok=(idx===0);
+  [].forEach.call(document.querySelectorAll(".opt"),function(b,k){
+    b.disabled=true;
+    if(st.order[k]===0)b.classList.add("ok");
+    else if(st.order[k]===idx)b.classList.add("try");
+    else b.classList.add("dim");
+  });
+  var fb=$("#fb");fb.hidden=false;fb.className="fb "+(ok?"ok":"try");
+  var key=st.item.c+st.i;
+  var praise=T("praise"),leads=T("tryLead");
+  var line=ok?praise[(st.i*3+st.queue.length)%praise.length]:leads[st.i%leads.length];
+  var title=ok?line:line.replace(/: $/,"");
+  $("#fbTitle").textContent=ok?title:title+".";
+  $("#fbTip").textContent=(ok?"":T("rightIs")+d.o[0]+". ")+d.t;
+  var nx=$("#next");nx.hidden=false;
+  nx.textContent=(st.i+1>=st.queue.length)?T("finish"):T("next");
+  if(speak){
+    say(ok?title:(title+". "+T("ansIs")+d.o[0]+"."),{speak:ok?(line+" "+d.t):(line+d.t)});
+    nx.focus({preventScroll:false});
+  }
+}
+function next(){
+  if(st.i+1<st.queue.length){st.i++;renderQ(true,false);return}
+  if(!st.review&&st.missed.length){st.review=true;st.queue=shuffle(st.missed);st.i=0;renderQ(true,false);return}
+  finish();
+}
+function endText(quiet){
+  var n=st.first,t=Q.length,pct=n/t,k=pct>=.8?1:(pct>=.5?2:3);
+  $("#endScore").textContent=T("of")(n,t);
+  $("#endTitle").textContent=T("end"+k);$("#endMsg").textContent=T("end"+k+"m");
+  var line=T("end"+k)+T("outro")+T("end"+k+"m");
+  if(quiet)$("#bubble").textContent=line;else say(line);
+}
+function finish(){
+  show("sEnd","end");
+  var prev=parseInt(store("eva_best")||"0",10);
+  if(st.first>prev)store("eva_best",String(st.first));
+  endText(false);
+}
+
+$("#goStart").addEventListener("click",start);
+$("#goBreath").addEventListener("click",function(){openBreath(T("breathIntro"))});
+$("#breathGo").addEventListener("click",breathe);
+$("#breathBack").addEventListener("click",function(){home(false)});
+$("#hear").addEventListener("click",hear);
+$("#next").addEventListener("click",next);
+$("#again").addEventListener("click",start);
+$("#endBreath").addEventListener("click",function(){openBreath(T("breathAgain"))});
+$("#langBtn").addEventListener("click",function(){setLang(st.lang==="es"?"en":"es")});
+$("#voiceBtn").addEventListener("click",function(){
+  st.voice=!st.voice;
+  this.setAttribute("aria-pressed",String(st.voice));
+  this.textContent=T(st.voice?"voiceOn":"voiceOff");
+  if(!st.voice)stopVoice();
+  store("eva_voice",st.voice?"1":"0");
+});
+$("#kidBtn").addEventListener("click",function(){
+  st.kid=!st.kid;this.setAttribute("aria-pressed",String(st.kid));this.textContent=T(st.kid?"kidOn":"kidOff");
+  store("eva_kid",st.kid?"1":"0");say(T("hello"),{force:true});
+});
+window.addEventListener("hashchange",function(){var h=(location.hash||"").replace("#","");if(h==="en"||h==="es")setLang(h)});
+
+/* Arranque: idioma por #en / #es, luego el guardado, luego español. La voz empieza con el primer toque (lo exigen los navegadores). */
+(function init(){
+  var h=(location.hash||"").replace("#",""),saved=store("eva_lang");
+  st.lang=(h==="en"||h==="es")?h:(saved==="en"?"en":"es");
+  if(store("eva_voice")==="0"){st.voice=false;$("#voiceBtn").setAttribute("aria-pressed","false")}
+  if(store("eva_kid")==="0"){st.kid=false;$("#kidBtn").setAttribute("aria-pressed","false")}
+  loadVoice();home(true);
+})();
+})();
+</script>
+
+</body>
+</html>
